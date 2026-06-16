@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zoé Axon — How it resolves IT tickets, end to end</title>
+  <meta name="description" content="An interactive system-design explainer for Zoé Axon: pick any IT problem, press Play, and watch the autonomous agent understand it, run the right recipe, use the right systems, ask a human only when it should, and close the ticket." />
+  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="./css/styles.css" />
+</head>
+<body>
+
+<!-- ══════════════════════ NAV ══════════════════════ -->
+<header class="nav" id="nav">
+  <div class="container nav-inner">
+    <a class="wordmark" href="#top" aria-label="Zoé Axon home">
+      <span class="wm-zoe">zoé</span><span class="wm-sq" aria-hidden="true"></span><span class="wm-axon">AXON</span>
+    </a>
+    <nav class="nav-links" aria-label="Section navigation">
+      <a href="#overview">Overview</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#playground">Playground</a>
+      <a href="#sops">How SOPs work</a>
+      <a href="#modularity">Modularity</a>
+    </nav>
+    <a href="#playground" class="btn btn-primary nav-cta">▶ Open the Playground</a>
+    <button class="nav-burger" id="navBurger" aria-label="Toggle menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ══════════════════════ HERO / OVERVIEW ══════════════════════ -->
+<section class="hero section-dark" id="overview">
+  <div class="hero-glow" aria-hidden="true"></div>
+  <div class="container hero-inner">
+    <div class="hero-copy reveal">
+      <span class="kicker kicker-light">Interactive system-design explainer</span>
+      <h1 class="hero-title">See how Zoé Axon resolves IT tickets — end to end.</h1>
+      <p class="hero-sub">
+        From the moment someone says “my laptop won’t connect” to a fully resolved ticket — watch the
+        agent understand the problem, run the right recipe, use the right systems, ask a human only when
+        it should, and close it in ServiceNow.
+      </p>
+      <div class="hero-actions">
+        <a href="#playground" class="btn btn-primary btn-lg">▶ Open the Playground</a>
+        <a href="#architecture" class="btn btn-ghost-light btn-lg">See the architecture</a>
+      </div>
+
+      <!-- mini pipeline -->
+      <div class="pipeline" aria-hidden="true">
+        <div class="pipeline-track" id="pipelineTrack">
+          <span class="pl-chip">You ask</span>
+          <span class="pl-arrow">→</span>
+          <span class="pl-chip">Zoé understands</span>
+          <span class="pl-arrow">→</span>
+          <span class="pl-chip">Picks a recipe</span>
+          <span class="pl-arrow">→</span>
+          <span class="pl-chip">Runs steps</span>
+          <span class="pl-arrow">→</span>
+          <span class="pl-chip pl-chip-done">Resolved</span>
+          <span class="pl-dot" id="plDot"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- stats -->
+    <div class="hero-stats reveal" id="heroStats">
+      <div class="stat-card">
+        <div class="stat-num" data-count="80" data-suffix="%">0%</div>
+        <div class="stat-label">resolved automatically</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num stat-text">Seconds</div>
+        <div class="stat-label">not hours</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" data-count="100" data-suffix="%">0%</div>
+        <div class="stat-label">of steps logged</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num stat-text">Only what matters</div>
+        <div class="stat-label">goes to a human</div>
+      </div>
+      <p class="stats-note">Illustrative figures</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════ 60-SECOND MENTAL MODEL ══════════════════════ -->
+<section class="section" id="mental">
+  <div class="container">
+    <span class="kicker">The 60-second mental model</span>
+    <h2 class="section-title">Five steps, every single time</h2>
+    <p class="section-lead">However hard the ticket, the shape is always the same.</p>
+
+    <div class="mm-strip" id="mmStrip">
+      <div class="mm-card reveal">
+        <div class="mm-num">1</div>
+        <div class="mm-icon">💬</div>
+        <h3>Someone asks for help</h3>
+        <p>By voice or chat — “my VPN keeps dropping”.</p>
+        <span class="tooltip" tabindex="0" aria-describedby="tip-channel">Channel layer
+          <span class="tooltip-pop" id="tip-channel" role="tooltip">Where the request arrives — voice, chat, web or email.</span>
+        </span>
+      </div>
+      <div class="mm-arrow" aria-hidden="true">→</div>
+      <div class="mm-card reveal">
+        <div class="mm-num">2</div>
+        <div class="mm-icon">🧠</div>
+        <h3>Zoé understands it</h3>
+        <p>What’s wrong, how urgent, and how sure it is.</p>
+        <span class="tooltip" tabindex="0" aria-describedby="tip-reasoning">Reasoning engine
+          <span class="tooltip-pop" id="tip-reasoning" role="tooltip">Works out the intent, the tier and a confidence score.</span>
+        </span>
+      </div>
+      <div class="mm-arrow" aria-hidden="true">→</div>
+      <div class="mm-card reveal">
+        <div class="mm-num">3</div>
+        <div class="mm-icon">📋</div>
+        <h3>It picks the matching recipe</h3>
+        <p>A step-by-step plan, written in plain JSON.</p>
+        <span class="tooltip" tabindex="0" aria-describedby="tip-sop">SOP
+          <span class="tooltip-pop" id="tip-sop" role="tooltip">Standard Operating Procedure — the recipe for one kind of ticket.</span>
+        </span>
+      </div>
+      <div class="mm-arrow" aria-hidden="true">→</div>
+      <div class="mm-card reveal">
+        <div class="mm-num">4</div>
+        <div class="mm-icon">⚙️</div>
+        <h3>It runs the steps</h3>
+        <p>Some by software, some by AI, some need a person’s OK.</p>
+        <span class="tooltip" tabindex="0" aria-describedby="tip-actions">Action types
+          <span class="tooltip-pop" id="tip-actions" role="tooltip">tool · AI · agent · script · human-approval.</span>
+        </span>
+      </div>
+      <div class="mm-arrow" aria-hidden="true">→</div>
+      <div class="mm-card reveal">
+        <div class="mm-num">5</div>
+        <div class="mm-icon">✅</div>
+        <h3>It fixes &amp; closes the ticket</h3>
+        <p>In ServiceNow, with a full record of everything.</p>
+        <span class="tooltip" tabindex="0" aria-describedby="tip-sor">System-of-record
+          <span class="tooltip-pop" id="tip-sor" role="tooltip">Where tickets officially live — plus an audit trail.</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="takeaway reveal">
+      <span class="takeaway-mark">◆</span>
+      One engine runs every recipe. <strong>New ticket type = new recipe file, not new code.</strong>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════ ARCHITECTURE ══════════════════════ -->
+<section class="section section-soft" id="architecture">
+  <div class="container">
+    <span class="kicker">Architecture</span>
+    <h2 class="section-title">One conductor, six planes — and everything is logged</h2>
+    <p class="section-lead">
+      Click any layer to see what it does in plain language. The Brain decides everything;
+      the planes below just do what they’re told.
+    </p>
+
+    <div class="arch-toolbar reveal">
+      <div class="deploy-toggle" id="deployToggle" role="group" aria-label="Deployment profile">
+        <button class="dt-btn is-active" data-deploy="hybrid" aria-pressed="true">Hybrid <span class="dt-tag">recommended</span></button>
+        <button class="dt-btn" data-deploy="cloud" aria-pressed="false">Full cloud</button>
+      </div>
+      <p class="arch-hint" id="archHint">
+        🔒 <strong>On your own servers</strong> &nbsp;·&nbsp; ☁️ <strong>Cloud tools you already use</strong>
+      </p>
+    </div>
+
+    <div class="arch-grid reveal">
+      <div class="arch-planes" id="archPlanes" role="group" aria-label="Architecture planes — select a layer"><!-- injected --></div>
+      <aside class="arch-panel" id="archPanel" aria-live="polite">
+        <div class="arch-panel-empty" id="archPanelEmpty">
+          <div class="arch-panel-icon">👆</div>
+          <p>Pick a layer on the left to see what lives there.</p>
+        </div>
+        <div class="arch-panel-body" id="archPanelBody" hidden></div>
+      </aside>
+    </div>
+
+    <p class="arch-note reveal">
+      The orchestrator + SOP engine in the Brain decide what runs next and keep order —
+      and <strong>every action is written to an immutable audit log</strong>.
+    </p>
+  </div>
+</section>
+
+<!-- ══════════════════════ PLAYGROUND ══════════════════════ -->
+<section class="section section-dark" id="playground">
+  <div class="container">
+    <span class="kicker kicker-light">⭐ The Playground</span>
+    <h2 class="section-title section-title-light">Pick any IT problem and press Play</h2>
+    <p class="section-lead section-lead-light">Watch exactly what happens inside — step by step.</p>
+
+    <!-- CONTROL BAR -->
+    <div class="pg-controls">
+      <div class="pg-scenarios" id="pgScenarios" role="group" aria-label="Choose a scenario"><!-- injected --></div>
+
+      <div class="pg-controls-row">
+        <div class="pg-channel" id="pgChannel" role="group" aria-label="Channel">
+          <button class="ch-btn is-active" data-channel="chat" aria-pressed="true">💬 Chat</button>
+          <button class="ch-btn" data-channel="voice" aria-pressed="false">🎙 Voice</button>
+        </div>
+
+        <div class="pg-transport">
+          <button id="pgPlay" class="btn btn-primary">▶ Play</button>
+          <button id="pgStep" class="btn btn-ghost-light">⏯ Step</button>
+          <button id="pgReset" class="btn btn-ghost-light">↺ Reset</button>
+          <label class="pg-speed">Speed
+            <select id="pgSpeed" aria-label="Playback speed">
+              <option value="0.5">0.5×</option>
+              <option value="1" selected>1×</option>
+              <option value="2">2×</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="pg-progress" id="pgProgress" aria-live="polite">Step 0 / 0</div>
+      </div>
+
+      <div class="pg-filter" id="pgFilter" role="group" aria-label="Filter scenarios">
+        <span class="pg-filter-label">Show:</span>
+        <button class="filt-btn is-active" data-filter="all" aria-pressed="true">All</button>
+        <button class="filt-btn" data-filter="auto" aria-pressed="false">🟢 Fully automatic</button>
+        <button class="filt-btn" data-filter="hitl" aria-pressed="false">🟠 Needs a human’s OK</button>
+      </div>
+    </div>
+
+    <!-- STAGE -->
+    <div class="pg-stage">
+
+      <!-- LEFT: CONVERSATION -->
+      <div class="pg-col pg-conv-col">
+        <div class="pg-col-head"><span class="dot-blue"></span> Conversation</div>
+        <div class="pg-voice" id="pgVoice" hidden>
+          <div class="waveform" id="waveform" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <div class="voice-status" id="voiceStatus">🎙 listening…</div>
+        </div>
+        <div class="pg-conversation" id="pgConversation" aria-label="Conversation between user and Zoé"></div>
+        <div id="pgAnnouncer" class="sr-only" aria-live="polite"></div>
+      </div>
+
+      <!-- CENTER: THE BRAIN -->
+      <div class="pg-col pg-brain-col">
+        <div class="pg-card u-card">
+          <div class="pg-card-head"><span class="hd-icon">🧠</span> Understanding <span class="hd-sub">— what Zoé worked out</span></div>
+          <div class="u-grid">
+            <div class="u-row"><span class="u-label">What they need</span><span class="u-value" id="pgIntent">—</span></div>
+            <div class="u-row"><span class="u-label">Difficulty
+              <span class="tooltip tip-inline" tabindex="0" aria-describedby="tip-tier">tier
+                <span class="tooltip-pop" id="tip-tier" role="tooltip">L1 = quick &amp; common, L3 = complex/specialist.</span></span>
+            </span><span class="tier-badge" id="pgTier">—</span></div>
+          </div>
+          <div class="u-conf">
+            <div class="u-conf-head"><span>How sure it is
+              <span class="tooltip tip-inline" tabindex="0" aria-label="confidence explanation" aria-describedby="tip-conf">?
+                <span class="tooltip-pop" id="tip-conf" role="tooltip">Confidence — Zoé only acts alone when it’s sure, safe and reversible.</span></span>
+            </span><span id="pgConfVal">—</span></div>
+            <div class="progress"><div class="progress-bar" id="pgConfBar"></div></div>
+          </div>
+          <div class="u-row u-row-recipe"><span class="u-label">Recipe chosen
+            <span class="tooltip tip-inline" tabindex="0" aria-describedby="tip-recipe">recipe
+              <span class="tooltip-pop" id="tip-recipe" role="tooltip">SOP — the step-by-step plan for this kind of ticket, written as JSON.</span></span>
+          </span><span class="u-value u-recipe" id="pgRecipe">—</span></div>
+          <div class="u-vars">
+            <div class="u-vars-head">What it pulled in <span class="u-vars-sub">(value · where from)</span></div>
+            <div class="u-vars-table" id="pgVars"><div class="u-vars-empty">—</div></div>
+          </div>
+        </div>
+
+        <div class="pg-card steps-card">
+          <div class="pg-card-head steps-head">
+            <span><span class="hd-icon">📋</span> The plan, running</span>
+            <button class="json-toggle" id="pgJsonToggle" aria-pressed="false">View JSON</button>
+          </div>
+          <div class="pg-steps" id="pgSteps">
+            <div class="pg-empty" id="pgEmpty">
+              <div class="pg-empty-icon">▶</div>
+              <p>Pick a problem above and press <strong>Play</strong>.</p>
+            </div>
+          </div>
+          <pre class="code" id="pgJson" hidden></pre>
+        </div>
+      </div>
+
+      <!-- RIGHT: OUTCOME -->
+      <div class="pg-col pg-out-col">
+        <div class="pg-col-head"><span class="dot-green"></span> Outcome</div>
+
+        <div class="pg-card ticket-card">
+          <div class="ticket-top">
+            <div>
+              <div class="ticket-label">ServiceNow ticket</div>
+              <div class="ticket-num" id="pgTicket">—</div>
+            </div>
+            <span class="state-pill" id="pgState" data-state="none">—</span>
+          </div>
+
+          <div class="ticket-auto">
+            <div class="ring" id="pgRing">
+              <svg viewBox="0 0 80 80" aria-hidden="true">
+                <circle class="ring-bg" cx="40" cy="40" r="34"/>
+                <circle class="ring-fg" id="pgRingFg" cx="40" cy="40" r="34"/>
+              </svg>
+              <div class="ring-val" id="pgAutoPct">0%</div>
+            </div>
+            <div class="ticket-auto-meta">
+              <div class="ticket-auto-title">Done by automation</div>
+              <div class="ticket-sla">⏱ <span id="pgSla">0s</span> elapsed</div>
+            </div>
+          </div>
+
+          <div class="ticket-stamp" id="pgStamp" hidden></div>
+          <div class="proactive-note" id="pgProactive" hidden></div>
+        </div>
+
+        <div class="pg-card log-card">
+          <div class="pg-card-head"><span class="hd-icon">🧾</span> Activity log <span class="hd-sub">— every action, timestamped</span></div>
+          <ul class="pg-log" id="pgLog" aria-live="polite" aria-label="Activity log"></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- MINI-MAP -->
+    <div class="pg-map-wrap">
+      <div class="pg-card map-card">
+        <div class="pg-card-head map-head">
+          <span><span class="hd-icon">🗺️</span> Architecture — lighting up live</span>
+          <span class="map-legend">
+            <span><span class="lg-dot" style="background:var(--cyan)"></span> active now</span>
+            <span><span class="lg-dot" style="background:#3a4a7a"></span> idle</span>
+          </span>
+        </div>
+        <svg class="pg-map" id="pgMap" viewBox="0 0 920 360" aria-hidden="true" focusable="false"><!-- injected --></svg>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════════════ HOW SOPs WORK ══════════════════════ -->
+<section class="section" id="sops">
+  <div class="container">
+    <span class="kicker">How recipes work</span>
+    <h2 class="section-title">It’s just JSON</h2>
+    <p class="section-lead">
+      Every recipe is a readable JSON file. Here’s the one for <strong>“licence expired”</strong> —
+      the same recipe you can run in the Playground.
+    </p>
+
+    <div class="sop-grid reveal">
+      <pre class="code code-annotated" id="sopCode"><!-- injected --></pre>
+      <ol class="sop-legend">
+        <li><span class="sop-mark">1</span><div><strong>trigger</strong> — which kind of ticket this recipe answers.</div></li>
+        <li><span class="sop-mark">2</span><div><strong>variables</strong> — what to pull in (product, who asked) and where from.</div></li>
+        <li><span class="sop-mark">3</span><div><strong>autonomy</strong> — run on its own only when confidence is high enough.</div></li>
+        <li><span class="sop-mark">4</span><div><strong>a choice</strong> — branch on what it found (renewable? needs sign-off?).</div></li>
+        <li><span class="sop-mark">5</span><div><strong>human_approval</strong> — pause for a person to approve the spend.</div></li>
+        <li><span class="sop-mark">6</span><div><strong>compensation</strong> — how to undo a step if a later one fails.</div></li>
+        <li><span class="sop-mark">7</span><div><strong>closure</strong> — finish and close the ticket in ServiceNow.</div></li>
+      </ol>
+    </div>
+
+    <div class="takeaway takeaway-strong reveal">
+      <span class="takeaway-mark">◆</span>
+      <div>
+        <strong>To support a new ticket type, you write a JSON file like this — no engineering rebuild.</strong><br>
+        To support a new client, you swap connectors and load their recipe pack.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════ MODULARITY ══════════════════════ -->
+<section class="section section-soft" id="modularity">
+  <div class="container">
+    <span class="kicker">Modularity</span>
+    <h2 class="section-title">One core, many clients</h2>
+    <p class="section-lead">The Zoé Core never changes. Everything around it plugs in.</p>
+
+    <div class="mod-grid reveal">
+      <div class="mod-hub" id="modHub">
+        <div class="mod-orbit" aria-hidden="true"></div>
+        <div class="mod-core" id="modCore">
+          <div class="mod-core-title">Zoé Core</div>
+          <div class="mod-core-sub">SOP engine · safety gate · audit</div>
+        </div>
+        <button class="mod-ring mod-ring-1" data-ring="channels"><span>Channels</span></button>
+        <button class="mod-ring mod-ring-2" data-ring="recipes"><span>Recipe packs</span></button>
+        <button class="mod-ring mod-ring-3" data-ring="connectors"><span>Connectors</span></button>
+      </div>
+
+      <div class="mod-detail" id="modDetail">
+        <div class="mod-detail-card" id="modDetailCard">
+          <h3 id="modDetailTitle">The unchanging core</h3>
+          <p id="modDetailNote">Zoé Core — the SOP engine, the safety gate, the audit. Identical for every client. Tap a ring to see what plugs into it.</p>
+        </div>
+        <div class="mod-profiles">
+          <div class="mod-profiles-label">Deploy profile</div>
+          <div class="mod-profile-band" id="modProfiles"><!-- injected --></div>
+          <p class="mod-line" id="modLine"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════ OUTCOMES (mock dashboard) ══════════════════════ -->
+<section class="section" id="outcomes">
+  <div class="container">
+    <span class="kicker">Outcomes</span>
+    <h2 class="section-title">What it looks like at scale</h2>
+    <p class="section-lead">A small mock exec view. <span class="muted-pill">illustrative mock data</span></p>
+
+    <div class="kpi-row reveal">
+      <div class="stat-card stat-card-light">
+        <div class="stat-num stat-ink" data-count="80" data-suffix="%">0%</div>
+        <div class="stat-label">handled automatically</div>
+      </div>
+      <div class="stat-card stat-card-light">
+        <div class="stat-num stat-ink" data-count="71" data-suffix="s">0s</div>
+        <div class="stat-label">median time to resolve</div>
+      </div>
+      <div class="stat-card stat-card-light">
+        <div class="stat-num stat-ink" data-count="100" data-suffix="%">0%</div>
+        <div class="stat-label">actions audited</div>
+      </div>
+    </div>
+
+    <div class="card chart-card reveal">
+      <div class="chart-head">Auto vs. human, by category</div>
+      <div class="chart-box"><canvas id="outcomesChart" aria-label="Bar chart: automated versus human-handled tickets by category"></canvas></div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ══════════════════════ FOOTER ══════════════════════ -->
+<footer class="footer">
+  <div class="container footer-inner">
+    <div class="footer-brand">
+      <span class="wordmark">
+        <span class="wm-zoe">zoé</span><span class="wm-sq" aria-hidden="true"></span><span class="wm-axon">AXON</span>
+      </span>
+      <p>Interactive system-design explainer · mock data · not a live system</p>
+    </div>
+    <nav class="footer-links" aria-label="Footer navigation">
+      <a href="#overview">Overview</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#playground">Playground</a>
+      <a href="#sops">How SOPs work</a>
+      <a href="#modularity">Modularity</a>
+    </nav>
+  </div>
+</footer>
+
+<script src="./js/data.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" defer></script>
+<script src="./js/app.js" defer></script>
+</body>
+</html>
