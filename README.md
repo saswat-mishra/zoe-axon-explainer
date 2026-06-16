@@ -57,7 +57,7 @@ gh repo create zoe-axon-explainer --public --source=. --remote=origin --push
 gh api -X POST repos/{owner}/zoe-axon-explainer/pages -f "source[branch]=main" -f "source[path]=/"
 ```
 
-**Live site:** _add the github.io URL here after the first Pages build._
+**Live site:** https://saswat-mishra.github.io/zoe-axon-explainer/
 
 ---
 
