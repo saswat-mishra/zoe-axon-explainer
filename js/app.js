@@ -421,7 +421,11 @@
     runId: 0,         // monotonic epoch — bumped on every reset to invalidate in-flight runs
     busy: false, busyRun: -1, // re-entrancy guard so concurrent advance() chains can't interleave
     resolveWait: null,        // lets a reset force-resolve a pending waitable()
+    ledger: [],               // append-only, hash-chained record of the run (the Ledger)
   };
+
+  /* ---- pacing knobs (snappy by default; speed selector scales them) ---- */
+  const PACE = { charMs: 10, msgMaxMs: 1100, dwellMin: 700, dwellMax: 1300, gapMs: 80 };
 
   function stepById(id) { return PG.sc.steps.find(s => s.id === id); }
 
@@ -515,8 +519,8 @@
       b.setAttribute('aria-pressed', String(on));
     });
     $('#pgVoice').hidden = (ch !== 'voice');
-    $('#pgConvCol')?.classList.toggle('voice-mode', ch === 'voice');
     $('.pg-conv-col')?.classList.toggle('voice-mode', ch === 'voice');
+    if (ch === 'voice') setVoiceMode('ready');
     if (!silent) resetRun();
   }
 
@@ -607,6 +611,8 @@
     return new Promise(resolve => {
       if (reduced()) { target.textContent = text; resolve(); return; }
       const my = PG.runId;
+      // cap typing: ≤10ms/char and a hard ceiling of ~1.1s per message (long messages finish fast)
+      const perChar = Math.max(4, Math.min(PACE.charMs, PACE.msgMaxMs / Math.max(1, text.length))) / PG.speed;
       target.innerHTML = '<span class="caret">&nbsp;</span>';
       let i = 0; const caret = $('.caret', target);
       const tick = () => {
@@ -616,7 +622,7 @@
           if (i < text.length) { target.appendChild(caret); }
           conv.scrollTop = conv.scrollHeight;
           i++;
-          setTimeout(tick, 18 / PG.speed);
+          setTimeout(tick, perChar);
         } else { resolve(); }
       };
       tick();
@@ -625,21 +631,64 @@
 
   /* ---- voice ---- */
   function setVoiceStatus(txt) { const v = $('#voiceStatus'); if (v) v.textContent = txt; }
-
-  /* ---- activity log ---- */
-  function logLine(text) {
-    const ul = $('#pgLog');
-    const empty = $('.pg-log-empty', ul); if (empty) empty.remove();
-    const li = document.createElement('li');
-    PG.elapsed = Math.min(PG.sc.outcome.elapsedSec, PG.elapsed);
-    const t = formatClock(PG.elapsed);
-    li.innerHTML = `<span class="lg-time">${t}</span><span class="lg-text">${esc(text)}</span>`;
-    ul.appendChild(li);
-    ul.scrollTop = ul.scrollHeight;
+  /* mode ∈ 'ready' | 'listening' | 'speaking' | 'idle' — drives the waveform + status pill */
+  function setVoiceMode(mode) {
+    const v = $('#pgVoice'); if (!v) return;
+    v.classList.toggle('speaking', mode === 'speaking');
+    v.classList.toggle('idle', mode === 'ready' || mode === 'idle');
+    setVoiceStatus(
+      mode === 'listening' ? '🎙 listening…' :
+      mode === 'speaking' ? '🔊 speaking…' :
+      mode === 'ready' ? '🎙 ready' : '🎙 …');
   }
+
+  /* ---- demo clock ---- */
   function formatClock(sec) {
     const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
     return `00:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`.slice(3);
+  }
+
+  /* ---- THE LEDGER — append-only, hash-chained record of the run ---- */
+  /* tiny stable FNV-ish hash → 4 hex chars (only needs to look chained + be deterministic) */
+  function hash4(str) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    return (h >>> 0).toString(16).padStart(8, '0').slice(0, 4);
+  }
+  function ledgerAppend(ev) {
+    const seq = PG.ledger.length + 1;
+    const prev = PG.ledger.length ? PG.ledger[PG.ledger.length - 1].hash : '0000';
+    const hash = hash4(prev + seq + ev.event + (ev.output || ''));
+    const entry = {
+      seq, ts: formatClock(PG.elapsed), actor: ev.actor || { type: 'agent', id: 'zoé' },
+      event: ev.event, evClass: ev.evClass || 'ev-tool', service: ev.service || '',
+      output: ev.output || '', hash, prev_hash: prev, final: !!ev.final, handoff: !!ev.handoff,
+    };
+    PG.ledger.push(entry);
+    renderLedgerRow(entry);
+    return entry;
+  }
+  function renderLedgerRow(e) {
+    const ul = $('#pgLog');
+    const empty = $('.pg-log-empty', ul); if (empty) empty.remove();
+    const li = document.createElement('li');
+    if (e.final) li.classList.add('le-final');
+    if (e.handoff) li.classList.add('le-handoff');
+    const svc = e.service ? `${esc(e.service)} · ` : '';
+    li.innerHTML =
+      `<span class="le-seq" aria-hidden="true">#${String(e.seq).padStart(2, '0')}</span>` +
+      `<span class="le-chain" aria-hidden="true">⛓</span>` +
+      `<span class="le-body"><span class="le-event ${e.evClass}">${esc(e.event)}</span> · ${svc}${e.output ? `<b>${esc(e.output)}</b>` : ''}</span>` +
+      `<span class="le-meta" aria-hidden="true"><span class="le-ts">${e.ts}</span><span class="le-hash" title="prev ${e.prev_hash}">${e.hash}</span></span>`;
+    ul.appendChild(li); ul.scrollTop = ul.scrollHeight;
+  }
+  /* map a completed step to a ledger event */
+  function stepLedgerEvent(step) {
+    const svcLabel = step.type === 'human_approval' ? 'Human approver'
+      : (step.service ? svcInfo(step.service).label : 'AI');
+    if (step.type === 'choice')
+      return { event: 'decision', evClass: 'ev-decision', service: svcLabel, output: step.branch || step.output, actor: { type: 'engine', id: 'sop' } };
+    return { event: 'step.completed', evClass: 'ev-tool', service: svcLabel, output: step.output, actor: { type: 'agent', id: 'zoé' } };
   }
 
   /* ---- outcome card ---- */
@@ -696,11 +745,13 @@
     PG.autoTarget = sc.outcome.automationPct;
     PG.perStep = sc.outcome.elapsedSec / Math.max(1, PG.path.length);
 
+    PG.ledger = [];
     renderUnderstanding(sc);
     renderSteps(PG.path);
     clearConv();
     queueFirstMessage();
-    $('#pgLog').innerHTML = `<li class="pg-log-empty">No actions yet — press Play.</li>`;
+    $('#pgLog').innerHTML = `<li class="pg-log-empty">No steps yet — press Play. Each step is appended here, chained.</li>`;
+    $('#readersWrap').hidden = true;
     setState('none', '—');
     $('#pgTicket').textContent = '—';
     setRing(0); setSla(0);
@@ -710,7 +761,7 @@
     if (PG.jsonView) { renderJsonView(); }
     setPlayLabel('▶ Play');
     $('#pgPlay').disabled = false; $('#pgStep').disabled = false;
-    setVoiceStatus('🎙 ready');
+    if (PG.channel === 'voice') setVoiceMode('ready');
     updateProgress();
   }
 
@@ -734,8 +785,10 @@
   function play() {
     if (PG.finished) { resetRun(); }
     if (PG.waiting) return;
-    if (PG.playing) { // pause (current step finishes, no further auto-advance)
-      PG.playing = false; clearTimer(); setPlayLabel('▶ Play'); return;
+    if (PG.playing) { // pause — let an in-flight step finish; only cancel a pending inter-step gap timer
+      PG.playing = false;
+      if (!stepInFlight()) clearTimer(); // don't orphan a running dwell's waitable() (would deadlock busy)
+      setPlayLabel('▶ Play'); return;
     }
     PG.playing = true; setPlayLabel('⏸ Pause');
     advance();
@@ -763,7 +816,7 @@
     }
     if (my !== PG.runId || PG.waiting || PG.finished) return; // reset/HITL/finish during the step
     if (PG.playing && !single) {
-      PG.timer = setTimeout(() => advance(), 120 / PG.speed);
+      PG.timer = setTimeout(() => advance(), PACE.gapMs / PG.speed);
     }
   }
 
@@ -817,17 +870,17 @@
     const row = rowEl(step.id);
     PG.ranCount += 1;
 
-    // outcome state transitions
-    if (PG.ranCount === 1) { setState('new', 'New'); $('#pgTicket').textContent = PG.sc.outcome.ticket; }
-    else if (step.type !== 'terminal') setState('progress', 'In Progress');
+    // outcome state transitions + open the ledger on the first step
+    if (PG.ranCount === 1) {
+      setState('new', 'New'); $('#pgTicket').textContent = PG.sc.outcome.ticket;
+      ledgerAppend({ event: 'run.started', evClass: 'ev-run',
+        output: `${PG.sc.sopId} v${PG.sc.sopVersion} · ${PG.channel} · ${PG.sc.user.id}`,
+        actor: { type: 'user', id: PG.sc.user.id } });
+    } else if (step.type !== 'terminal') setState('progress', 'In Progress');
 
-    // light the map
-    const services = step.type === 'parallel' && step.agents
-      ? step.agents.map(a => a.service)
-      : [step.service];
+    // light the map + JSON sync
+    const services = step.type === 'parallel' && step.agents ? step.agents.map(a => a.service) : [step.service];
     lightMapForServices(services);
-
-    // JSON sync
     syncJson(step.id);
 
     // mark active + open detail (collapse the others)
@@ -841,38 +894,29 @@
       row.scrollIntoView({ block: 'nearest', behavior: reduced() ? 'auto' : 'smooth' });
     }
 
-    // stream chat
+    // start the chat but DON'T block the step on it — typing overlaps the dwell
+    let typingDone = Promise.resolve();
     if (step.chat) {
-      if (PG.channel === 'voice') setVoiceStatus(step.chat.from === 'user' ? '🎙 listening…' : '🔊 speaking…');
-      await pushMessage(step.chat.from, step.chat.text);
-      if (stale()) return;
-      if (PG.channel === 'voice') setVoiceStatus('🎙 …');
+      if (PG.channel === 'voice') setVoiceMode(step.chat.from === 'user' ? 'listening' : 'speaking');
+      typingDone = pushMessage(step.chat.from, step.chat.text)
+        .then(() => { if (!stale() && PG.channel === 'voice') setVoiceMode('idle'); });
     }
 
-    // ===== HUMAN APPROVAL — pause =====
+    // ===== HUMAN APPROVAL — pause (let the prompt finish typing first) =====
     if (step.type === 'human_approval') {
+      await typingDone; if (stale()) return;
       return enterHitl(step, row);
     }
 
     // ===== PARALLEL — run agents simultaneously =====
     if (step.type === 'parallel' && step.agents) {
-      await runParallel(step, row);
-      if (stale()) return;
+      await runParallel(step, row); if (stale()) return;
     }
 
-    // log + counters as it works
-    bumpCounters();
-    if (step.output) logLine(`${step.type === 'choice' ? '🔀 ' : ''}${step.output}`);
-    if (step.branch) {
-      const note = document.createElement('div');
-      note.className = 'sd-block'; note.innerHTML = `<div class="sd-label">Decision taken</div><div class="sd-found">${esc(step.branch)}</div>`;
-      $('.step-detail-inner', row)?.appendChild(note);
-    }
-
-    // wait the step duration (scaled)
-    const dur = Math.max(300, (step.durationMs || 800)) / PG.speed;
-    await waitable(dur);
-    if (PG.finished || stale()) return; // reset / finish happened mid-wait
+    // visible dwell (clamped + scaled), overlapping the chat typing
+    const dur = Math.min(PACE.dwellMax, Math.max(PACE.dwellMin, step.durationMs || 800)) / PG.speed;
+    await waitable(dur); if (PG.finished || stale()) return;
+    await typingDone; if (PG.finished || stale()) return; // keep messages ordered before completing
 
     // ===== FORCED FAILURE → compensation + escalate =====
     if (step.status === 'fail') {
@@ -881,22 +925,29 @@
         $('.step-state', row).innerHTML = '<span class="step-x" aria-hidden="true">✗</span><span class="sr-only">failed</span>';
         $('.step-dur', row).textContent = (step.durationMs / 1000).toFixed(1) + 's';
       }
-      logLine('✗ ' + (step.output || 'Step failed'));
-      await waitable(500 / PG.speed);
-      if (stale()) return;
-      logLine('↩ Compensating — safely undoing the previous action');
+      bumpCounters();
+      ledgerAppend({ event: 'step.failed', evClass: 'ev-failed', service: svcInfo(step.service).label, output: step.output || 'step failed' });
+      await waitable(420 / PG.speed); if (stale()) return;
+      ledgerAppend({ event: 'compensation', evClass: 'ev-failed', service: svcInfo(step.service).label, output: 'undo previous action' });
       await pushMessage('zoe', "I couldn't safely fix this remotely, so I've undone my changes and handed it to a human engineer — with everything I found attached.");
       if (stale()) return;
       finalize('handoff');
       return;
     }
 
-    // mark done
+    // ===== mark done — log + ledger the instant the step completes =====
     if (row) {
       row.classList.remove('active'); row.classList.add('done');
       $('.step-state', row).innerHTML = '<span class="step-check" aria-hidden="true">✓</span><span class="sr-only">succeeded</span>';
       $('.step-dur', row).textContent = ((step.durationMs || 800) / 1000).toFixed(1) + 's';
     }
+    bumpCounters();
+    if (step.branch) {
+      const note = document.createElement('div');
+      note.className = 'sd-block'; note.innerHTML = `<div class="sd-label">Decision taken</div><div class="sd-found">${esc(step.branch)}</div>`;
+      $('.step-detail-inner', row)?.appendChild(note);
+    }
+    if (step.type !== 'terminal') ledgerAppend(stepLedgerEvent(step));
 
     if (step.type === 'terminal') { finalizeTerminal(step); return; }
     updateProgress();
@@ -943,7 +994,6 @@
       if (my !== PG.runId) return; // stale run
       const mini = $(`.agent-mini[data-ai="${i}"]`, host);
       if (mini) { mini.classList.add('done'); $('.agent-out', mini).innerHTML = `✓ ${esc(a.output)}`; }
-      logLine(`↳ ${a.title}: ${a.output}`);
     })()));
     if (my !== PG.runId) return;
     // merge line
@@ -957,7 +1007,7 @@
     PG.waiting = true; PG.playing = false;
     setPlayLabel('▶ Play'); $('#pgPlay').disabled = true; $('#pgStep').disabled = true;
     setState('progress', 'Waiting on approval');
-    logLine('⏸ Waiting for a human’s approval');
+    ledgerAppend({ event: 'approval.requested', evClass: 'ev-approval', service: 'Human approver', output: step.hitl.prompt, actor: { type: 'engine', id: 'sop' } });
     setVoiceStatus('⏸ waiting for approval');
 
     if (row) {
@@ -1016,8 +1066,10 @@
     }
     // focus would otherwise drop to <body> when the focused Approve button is disabled
     $('#pgPlay').focus();
-    logLine(approved ? '✓ Approved by a human' : '✗ Rejected by a human');
     bumpCounters();
+    ledgerAppend({ event: approved ? 'approval.granted' : 'approval.rejected', evClass: 'ev-approval',
+      service: 'Human approver', output: approved ? 'authorised by manager' : 'declined by manager',
+      actor: { type: 'human', id: 'manager' } });
 
     const targetId = approved ? step.hitl.onApprove : step.hitl.onReject;
     PG.jumpTo = targetId;
@@ -1063,8 +1115,52 @@
       stamp.innerHTML = `<span class="stamp-big">🚫 Closed — not approved</span>
         <span class="stamp-sub">Logged with the reason · no changes made</span>`;
     }
+    // close the ledger and surface the four readers from this run
+    if (kind === 'resolved') ledgerAppend({ event: 'run.resolved', evClass: 'ev-resolved', output: `${o.resolution} · ${o.automationPct}% automated`, final: true });
+    else if (kind === 'handoff') ledgerAppend({ event: 'run.handed_off', evClass: 'ev-failed', output: o.resolution, final: true, handoff: true });
+    else ledgerAppend({ event: 'run.closed', evClass: 'ev-approval', output: 'not authorised · no changes made', final: true, handoff: true });
+    renderReaders(kind);
     clearMap();
     updateProgress();
+  }
+
+  /* ---- "The same record, four ways" — populated from the just-played run ---- */
+  const ADVISORY = {
+    Identity: 'Recurring identity tickets → roll out self-service reset + passkeys.',
+    Software: 'Recurring software/licence asks → set up pre-approved licence pools.',
+    Network: 'Recurring VPN drops → auto-remediate hung tunnels on detection.',
+    Endpoint: 'Recurring slow devices → ship a proactive disk-cleanup policy.',
+    Lifecycle: 'Recurring onboarding → a one-click joiner template per department.',
+    Hardware: 'Recurring hardware faults → stand up a loaner-laptop fast-swap.',
+  };
+  function readerVal(keys) {
+    const v = PG.sc.variables.find(x => keys.some(k => x.k.toLowerCase().includes(k)));
+    return v ? v.v : null;
+  }
+  function renderReaders(kind) {
+    const grid = $('#readersGrid'), wrap = $('#readersWrap');
+    if (!grid || !wrap) return;
+    const sc = PG.sc, o = sc.outcome;
+    const approvals = PG.ledger.filter(e => e.event === 'approval.granted' || e.event === 'approval.rejected').length;
+    const approved = PG.ledger.some(e => e.event === 'approval.granted');
+    const rejected = PG.ledger.some(e => e.event === 'approval.rejected');
+    const steps = PG.ledger.filter(e => e.event === 'step.completed' || e.event === 'decision').length;
+    const subject = readerVal(['product', 'device', 'app', 'joiner']) || sc.intent;
+    const cost = readerVal(['cost']) || '—';
+    const cat = sc.category;
+    const outcomeWord = kind === 'resolved' ? `resolved in ${o.elapsedSec}s`
+      : kind === 'handoff' ? `handed to a human after ${o.elapsedSec}s` : 'closed (not approved)';
+    const approvalNote = approvals
+      ? (approved ? '1 manager approval' : rejected ? 'manager declined' : `${approvals} approval(s)`)
+      : 'no human needed';
+    const cards = [
+      { ico: '🧠', title: 'Agent memory', body: `Next time <b>${esc(sc.user.id)}</b> or <b>${esc(subject)}</b> comes up: “${esc(sc.sopId)} ${outcomeWord}, ${approvalNote}. Likely auto-resolvable.”` },
+      { ico: '🤝', title: 'Hand-over packet', body: `Ready for a human: <b>${steps} steps</b>, ${approvalNote}, ${kind === 'resolved' ? 'resolved' : kind === 'handoff' ? 'escalated' : 'closed'}. Full ordered trail attached.` },
+      { ico: '📊', title: 'Analytics & advisory', body: `+1 to <b>${esc(cat)}</b> · ${esc(cost)} · ${sc.autonomy === 'auto' ? 'auto' : 'human-in-loop'}. ${esc(ADVISORY[cat] || 'Watch the trend for upgrade opportunities.')}` },
+      { ico: '🛡', title: 'Audit & compliance', body: `Tamper-evident: <b>${PG.ledger.length} entries</b>, chain intact ✓. Authority: ${approved ? 'manager' : approvals ? 'human' : 'policy'}. Who/what/why recorded.` },
+    ];
+    grid.innerHTML = cards.map(c => `<div class="reader-card"><h4><span class="rc-ico" aria-hidden="true">${c.ico}</span>${c.title}</h4><p>${c.body}</p></div>`).join('');
+    wrap.hidden = false;
   }
 
   /* ---- tiny confetti (canvas-free, DOM dots) ---- */
@@ -1120,6 +1216,37 @@
     }));
   }
 
+  /* reliable in-page anchor scrolling (one-shot scrollIntoView mis-lands under reveal-on-scroll) */
+  const NAV_OFFSET = 84;
+  function initAnchors() {
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest('a[href^="#"]');
+      if (!a) return;
+      const hash = a.getAttribute('href');
+      if (!/^#[\w-]+$/.test(hash)) return; // ignore "#" and non-id hrefs (e.g. deep-link params)
+      const el = document.querySelector(hash);
+      if (!el) return;
+      e.preventDefault();
+      // reveal the target (and its children) first so its measured height is final
+      el.querySelectorAll('.reveal').forEach(r => r.classList.add('in'));
+      if (el.classList.contains('reveal')) el.classList.add('in');
+      const y = el.getBoundingClientRect().top + window.scrollY - NAV_OFFSET;
+      window.scrollTo({ top: Math.max(0, y), behavior: reduced() ? 'auto' : 'smooth' });
+      // advance keyboard focus to the landed section (preventScroll keeps the smooth scroll)
+      if (!el.hasAttribute('tabindex')) { el.setAttribute('tabindex', '-1'); el.addEventListener('blur', () => el.removeAttribute('tabindex'), { once: true }); }
+      el.focus({ preventScroll: true });
+      // close the mobile menu if it was open
+      const nav = $('#nav');
+      if (nav && nav.classList.contains('menu-open')) { nav.classList.remove('menu-open'); $('#navBurger')?.setAttribute('aria-expanded', 'false'); }
+      // brief highlight when jumping to a specific Ledger reader
+      if (a.dataset.reader) {
+        const r = $(`.ld-reader[data-r="${a.dataset.reader}"]`);
+        if (r) { r.classList.add('flash'); setTimeout(() => r.classList.remove('flash'), 1400); }
+      }
+      if (history.replaceState) history.replaceState(null, '', hash);
+    });
+  }
+
   /* ========================================================
      BOOT
      ======================================================== */
@@ -1129,6 +1256,7 @@
     initCounters();
     initPipeline();
     initTooltips();
+    initAnchors();
     buildArch();
     initDeployToggle();
     buildSop();
